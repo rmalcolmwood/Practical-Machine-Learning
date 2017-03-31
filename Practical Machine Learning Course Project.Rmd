@@ -1,0 +1,92 @@
+---
+title: "Practical Machine Learning - Course Project"
+author: "Ryan Wood"
+date: "March 31, 2017"
+output: html_document
+---
+
+###Background
+
+This is the course project for Practical Machine Learning. The objective is to use personal activity data from acceleromters to predict what type of exercise indiviudals are performing. The data source is available at http://groupware.les.inf.puc-rio.br/har (see the section on the Weight Lifting Exercise Dataset). This analysis attempted fitting 3 types of predictive models to the dataset; Random Forest, Recursive Partitioning, and Linear Discriminant Analysis. The model with the best accuracy was chosen as the preferred model.
+
+###Data
+
+There are 160 variables including the classe variable, the manner in which the exercise was performed, which this model aims to predict.  The training dataset has 19622 cases and the final testing dataset has 20 cases.
+
+###Cleaning the Data
+
+The dataset has several variables which are not relevant and should be removed to avoid impacting the algorythms (Columns 1 through 7 have ID's, timestamps, periods, etc). NA values should also be identified so they can be uniformly removed.
+```{r}
+library(data.table)
+training <- read.csv('https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv', na.strings=c("NA","#DIV/0",""))
+testing <- read.csv('https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv', na.strings=c("NA","#DIV/0",""))
+training <- training[,-c(1:7)]
+testing <- testing[,-c(1:7)]
+nrow(training)
+nrow(testing)
+ncol(training)
+ncol(testing)
+```
+###Cross Validation Planning
+
+We begin by partitioning the training file into a training subset and testing subset.  This will allow for cross validation where we will have the ability to measure the accuracy of a model's prediction using an independent test set.  This partition is random in order to attempt to have an unbiased testing set.  We can use the r package "caret" to automate this partitioning.
+
+We should also remove NA values to help clean the data. If a variable is 60% NA it was removed from the analysis.  This leaves us with 52 possilble predictor variables plus the the variable "classe".
+```{r}
+library(caret)
+cv <- createDataPartition(y=training$classe, p=0.70, list = FALSE)
+cvTraining <- training[cv, ]
+cvTesting <- training[-cv, ]
+
+navalues <- colSums(is.na(cvTraining))/nrow(cvTraining)
+nanames <- names(navalues[navalues > .6])
+navariables <- which(navalues > .6)
+
+cleancvTraining <- cvTraining[,-navariables]
+
+variables <- names(cleancvTraining)
+variables
+```
+###Model Development
+
+We can attempt several differnet model algorthyms to find a version with high accruacy and low error rate.
+
+####1. Recursive Partioning Model has low accuracy of 49% in the training model.
+```{r}
+Rpartmod <- train(classe ~ .,data = cleancvTraining, method = "rpart")
+predRpart <- predict(Rpartmod, cvTraining)
+confusionMatrix(predRpart, cvTraining$classe)$overall[1]
+```
+
+####2. LDA model achieved 70% accuracy in the training model.
+```{r}
+Lmod <- train(classe ~ .,data = cleancvTraining, method = "lda")
+predLmod <- predict(Lmod, cvTraining)
+confusionMatrix(predLmod, cvTraining$classe)$overall[1]
+```
+
+####3. Random Forest Model achieved 100% accuracy in the training model and 99% accuracy in the testing model.
+```{r}
+library(randomForest)
+set.seed(5555)
+RFmod <- randomForest(classe ~., data=cleancvTraining, type="class")
+pred_RFmodTrain <- predict(RFmod, cvTraining)
+confusionMatrix(pred_RFmodTrain, cvTraining$classe)$overall[1]
+```
+#####Figure 1: Random Forest Model Training Sample Confusion Matrix
+```{r}
+confusionMatrix(pred_RFmodTrain, cvTraining$classe)$table
+```
+Random Forest model has 100% Accuracy with Training Data, so the next step is to see how this model works for the Testing Data.
+
+```{r}
+pred_RFmodTest <- predict(RFmod, cvTesting)
+confusionMatrix(pred_RFmodTest, cvTesting$classe)$overall[1]
+```
+Expected out-of-sample error: 99% Accuracy with Testing Data, so this model is the preferred choice to use on the Test dataset.
+
+Random Forest Model Predictions on the Test Set
+```{r}
+Test <- predict(RFmod, testing, type="class")
+Test
+```
